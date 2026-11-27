@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { ScheduleEditor } from "./ScheduleEditor";
+import { updateStationName } from "../../lib/stations";
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -51,6 +52,10 @@ export function SettingsPage() {
   const [errorMsg, setErrorMsg] = useState(null);
   const [schedules, setSchedules] = useState([]);
   const [savingSchedules, setSavingSchedules] = useState(false);
+
+  const [editingStationId, setEditingStationId] = useState(null);
+  const [editStationName, setEditStationName] = useState("");
+  const [savingStationId, setSavingStationId] = useState(null);
 
   useEffect(() => {
     async function loadSettings() {
@@ -188,6 +193,40 @@ export function SettingsPage() {
     // Copiar horarios generales si la estación nueva aún no tiene específicos
     setStations((prev) => [...prev, data]);
     setNewStationName("");
+  }
+
+  function startEditingStation(station) {
+    setErrorMsg(null);
+    setEditingStationId(station.id);
+    setEditStationName(station.name);
+  }
+  
+  function cancelEditingStation() {
+    setEditingStationId(null);
+    setEditStationName("");
+  }
+
+  async function handleSaveStationEdit(stationId) {
+    if (!editStationName.trim()) {
+      setErrorMsg("El nombre del puesto no puede estar vacío.");
+      return;
+    }
+  
+    setSavingStationId(stationId);
+    setErrorMsg(null);
+  
+    try {
+      const updated = await updateStationName(stationId, editStationName);
+      setStations((prev) =>
+        prev.map((s) => (s.id === stationId ? { ...s, ...updated } : s))
+      );
+      setEditingStationId(null);
+      setEditStationName("");
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setSavingStationId(null);
+    }
   }
 
   async function handleToggleStation(station) {
@@ -509,40 +548,99 @@ export function SettingsPage() {
           </form>
 
           <div className="divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-950/60">
-            {stations.map((station) => (
-              <div
-                key={station.id}
-                className="flex items-center justify-between px-4 py-3"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      station.is_active ? "bg-emerald-400" : "bg-zinc-600"
-                    }`}
-                  />
-                  <span
-                    className={`text-sm font-medium ${
-                      station.is_active ? "text-white" : "text-zinc-500 line-through"
-                    }`}
-                  >
-                    {station.name}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleToggleStation(station)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
-                    station.is_active
-                      ? "border-zinc-700 text-zinc-300 hover:border-rose-500/50 hover:text-rose-300"
-                      : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                  }`}
+            {stations.map((station) => {
+              const isEditing = editingStationId === station.id;
+              const isSaving = savingStationId === station.id;
+          
+              return (
+                <div
+                  key={station.id}
+                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
                 >
-                  <Power className="h-3.5 w-3.5" />
-                  {station.is_active ? "Desactivar" : "Activar"}
-                </button>
-              </div>
-            ))}
+                  {isEditing ? (
+                    <div className="flex flex-1 items-center gap-2">
+                      <input
+                        type="text"
+                        value={editStationName}
+                        disabled={isSaving}
+                        autoFocus
+                        onChange={(e) => setEditStationName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSaveStationEdit(station.id);
+                          }
+                          if (e.key === "Escape") {
+                            cancelEditingStation();
+                          }
+                        }}
+                        className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white focus:border-amber-400 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => handleSaveStationEdit(station.id)}
+                        className="rounded-lg bg-emerald-500 p-1.5 text-zinc-950 hover:bg-emerald-400 disabled:opacity-40"
+                        title="Guardar nombre"
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={cancelEditingStation}
+                        className="rounded-lg border border-zinc-700 p-1.5 text-zinc-400 hover:text-white disabled:opacity-40"
+                        title="Cancelar"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            station.is_active ? "bg-emerald-400" : "bg-zinc-600"
+                          }`}
+                        />
+                        <span
+                          className={`text-sm font-medium ${
+                            station.is_active
+                              ? "text-white"
+                              : "text-zinc-500 line-through"
+                          }`}
+                        >
+                          {station.name}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => startEditingStation(station)}
+                          className="rounded-lg border border-zinc-800 p-1.5 text-zinc-400 hover:border-amber-400 hover:text-amber-400 transition"
+                          title="Editar puesto"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStation(station)}
+                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+                            station.is_active
+                              ? "border-zinc-700 text-zinc-300 hover:border-rose-500/50 hover:text-rose-300"
+                              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                          }`}
+                        >
+                          <Power className="h-3.5 w-3.5" />
+                          {station.is_active ? "Desactivar" : "Activar"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Calendar,
@@ -13,9 +13,13 @@ import {
   Clock,
   Phone,
   Settings,
+  Edit2,
+  X,
+  ExternalLink,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useAdminDashboard } from "../../hooks/useAdminDashboard";
+import { updateStationName } from "../../lib/stations";
 
 function formatLocalDate(dateObj) {
   const y = dateObj.getFullYear();
@@ -65,6 +69,11 @@ export function DashboardPage() {
   const [modalError, setModalError] = useState(null);
   const [savingManual, setSavingManual] = useState(false);
 
+  // Edición en línea de puestos
+  const [editingStationId, setEditingStationId] = useState(null);
+  const [editStationName, setEditStationName] = useState("");
+  const [savingStation, setSavingStation] = useState(false);
+
   const {
     loading,
     error,
@@ -76,6 +85,12 @@ export function DashboardPage() {
     markReminderSent,
     createManualAppointment,
   } = useAdminDashboard(selectedDate);
+
+  const [localStations, setLocalStations] = useState([]);
+
+  useEffect(() => {
+    setLocalStations(stations ?? []);
+  }, [stations]);
 
   const publicUrl = tenant ? `${window.location.origin}/${tenant.slug}` : "";
 
@@ -89,6 +104,28 @@ export function DashboardPage() {
   async function handleLogout() {
     await supabase.auth.signOut();
     navigate("/login");
+  }
+
+  function handleStartEditStation(station) {
+    setEditingStationId(station.id);
+    setEditStationName(station.name);
+  }
+
+  async function handleConfirmEditStation(stationId) {
+    if (!editStationName.trim()) return;
+    setSavingStation(true);
+    try {
+      const updated = await updateStationName(stationId, editStationName);
+      setLocalStations((prev) =>
+        prev.map((st) => (st.id === stationId ? { ...st, ...updated } : st))
+      );
+      setEditingStationId(null);
+      setEditStationName("");
+    } catch (err) {
+      alert(err.message ?? "No se pudo renombrar el puesto.");
+    } finally {
+      setSavingStation(false);
+    }
   }
 
   async function handleSendWhatsApp(app, stationName) {
@@ -121,7 +158,7 @@ export function DashboardPage() {
   }
 
   function openManualModal(defaultStationId = "") {
-    setManualStationId(defaultStationId || stations[0]?.id || "");
+    setManualStationId(defaultStationId || localStations[0]?.id || "");
     setManualServiceId(services[0]?.id || "");
     setManualTime("10:00");
     setManualName("");
@@ -193,7 +230,19 @@ export function DashboardPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {publicUrl && (
+              <a
+                href={publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:border-amber-400 transition"
+              >
+                <ExternalLink className="h-3.5 w-3.5 text-amber-400" />
+                Ver página
+              </a>
+            )}
+
             <button
               type="button"
               onClick={handleCopyLink}
@@ -299,7 +348,7 @@ export function DashboardPage() {
         </div>
 
         {/* Columnas por Estación */}
-        {stations.length === 0 ? (
+        {localStations.length === 0 ? (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-400">
             No tenés estaciones activas configuradas.
           </div>
@@ -307,95 +356,136 @@ export function DashboardPage() {
           <div
             className="grid gap-4"
             style={{
-              gridTemplateColumns: `repeat(${Math.min(stations.length, 4)}, minmax(260px, 1fr))`,
+              gridTemplateColumns: `repeat(${Math.min(localStations.length, 4)}, minmax(260px, 1fr))`,
             }}
           >
-            {stations.map((station) => {
-              const stationApps = appointments.filter((a) => a.station_id === station.id);
+            {localStations.map((station) => {
+              const stationApps = appointments.filter((app) => app.station_id === station.id);
 
               return (
-                <section
+                <div
                   key={station.id}
-                  className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden"
+                  className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/60"
                 >
-                  {/* Encabezado de estación */}
-                  <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4 py-3">
-                    <div>
-                      <h2 className="text-sm font-semibold text-white">{station.name}</h2>
-                      <p className="text-xs text-zinc-400">
-                        {stationApps.length} turno(s)
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => openManualModal(station.id)}
-                      title="Agregar turno en esta estación"
-                      className="rounded-lg border border-zinc-700 bg-zinc-800/80 p-1.5 text-zinc-300 hover:border-amber-400 hover:text-amber-400 transition"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
+                  {/* Cabecera de la columna o tarjeta de la estación */}
+                  <div className="border-b border-zinc-800 px-4 py-3">
+                    {editingStationId === station.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={editStationName}
+                          disabled={savingStation}
+                          autoFocus
+                          onChange={(e) => setEditStationName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleConfirmEditStation(station.id);
+                            }
+                            if (e.key === "Escape") {
+                              setEditingStationId(null);
+                            }
+                          }}
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 text-xs text-white focus:border-amber-400 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          disabled={savingStation}
+                          onClick={() => handleConfirmEditStation(station.id)}
+                          className="rounded-lg bg-emerald-500 p-1 text-zinc-950 hover:bg-emerald-400"
+                          title="Guardar"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingStation}
+                          onClick={() => setEditingStationId(null)}
+                          className="rounded-lg border border-zinc-700 p-1 text-zinc-400 hover:text-white"
+                          title="Cancelar"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-white truncate">
+                          {station.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditStation(station)}
+                          className="rounded-lg border border-zinc-800 p-1 text-zinc-400 hover:border-amber-400 hover:text-amber-400 transition shrink-0"
+                          title="Renombrar puesto"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Lista de turnos de la estación */}
+                  {/* Turnos de esa estación */}
                   <div className="flex-1 space-y-2.5 p-3">
                     {stationApps.length === 0 ? (
-                      <p className="py-8 text-center text-xs text-zinc-500">
-                        Sin turnos agendados
+                      <p className="py-6 text-center text-xs text-zinc-500">
+                        Sin turnos para este día
                       </p>
                     ) : (
                       stationApps.map((app) => (
-                        <article
+                        <div
                           key={app.id}
-                          className="rounded-xl border border-zinc-800 bg-zinc-950/90 p-3 space-y-2.5"
+                          className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-3 space-y-2"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-semibold text-amber-400">
-                                <Clock className="h-3 w-3" />
-                                {app.start_time.slice(0, 5)} - {app.end_time.slice(0, 5)}
-                              </span>
-                              <h3 className="mt-1.5 text-sm font-medium text-white">
-                                {app.client_name}
-                              </h3>
-                              <p className="text-xs text-zinc-400">
-                                {app.services?.name ?? "Servicio"}
-                              </p>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => handleCancel(app)}
-                              title="Cancelar turno"
-                              className="rounded-lg p-1.5 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400 transition"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-400">
+                              <Clock className="h-3.5 w-3.5" />
+                              {app.start_time.slice(0, 5)} - {app.end_time.slice(0, 5)}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 truncate">
+                              {app.services?.name ?? "Servicio"}
+                            </span>
                           </div>
 
-                          <div className="flex items-center justify-between gap-2 border-t border-zinc-800/80 pt-2">
-                            <span className="inline-flex items-center gap-1 text-xs text-zinc-400">
-                              <Phone className="h-3 w-3" />
-                              {app.client_phone}
-                            </span>
+                          <div className="space-y-0.5">
+                            <p className="text-sm font-medium text-white truncate">
+                              {app.client_name}
+                            </p>
+                            {app.client_phone && app.client_phone !== "Sin teléfono" && (
+                              <p className="inline-flex items-center gap-1 text-xs text-zinc-400">
+                                <Phone className="h-3 w-3" />
+                                {app.client_phone}
+                              </p>
+                            )}
+                          </div>
 
+                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-800/80">
                             <button
                               type="button"
                               onClick={() => handleSendWhatsApp(app, station.name)}
-                              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                                 app.reminder_sent
                                   ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                                  : "bg-emerald-500 text-zinc-950 hover:bg-emerald-400"
+                                  : "border border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-emerald-400"
                               }`}
                             >
                               <MessageCircle className="h-3.5 w-3.5" />
                               {app.reminder_sent ? "Recordado" : "Recordar"}
                             </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCancel(app)}
+                              title="Cancelar turno"
+                              className="rounded-lg border border-zinc-800 p-1.5 text-zinc-400 hover:border-rose-500/50 hover:text-rose-300 transition"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
-                        </article>
+                        </div>
                       ))
                     )}
                   </div>
-                </section>
+                </div>
               );
             })}
           </div>
@@ -427,7 +517,7 @@ export function DashboardPage() {
                   onChange={(e) => setManualStationId(e.target.value)}
                   className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white focus:border-amber-400 focus:outline-none"
                 >
-                  {stations.map((st) => (
+                  {localStations.map((st) => (
                     <option key={st.id} value={st.id}>
                       {st.name}
                     </option>
