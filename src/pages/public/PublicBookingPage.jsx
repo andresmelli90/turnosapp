@@ -8,6 +8,17 @@ import { DateStripPicker } from "../../components/booking/DateStripPicker";
 import { TimeSlotGrid } from "../../components/booking/TimeSlotGrid";
 import { BookingSummaryBar } from "../../components/booking/BookingSummaryBar";
 
+function formatDisplayDate(isoDate) {
+  if (!isoDate) return "";
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+  const dt = new Date(y, m - 1, d);
+  const day = String(dt.getDate()).padStart(2, "0");
+  const month = String(dt.getMonth() + 1).padStart(2, "0");
+  const year = dt.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 function getNextDays(count = 14) {
   const days = [];
   const base = new Date();
@@ -22,7 +33,7 @@ function getNextDays(count = 14) {
       day: "2-digit",
       month: "short",
     });
-    days.push({ iso, label });
+    days.push({ iso, label, displayDate: formatDisplayDate(iso) });
   }
   return days;
 }
@@ -287,7 +298,7 @@ export function PublicBookingPage() {
           <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-100 space-y-1">
             <p className="font-semibold text-emerald-300">¡Turno confirmado!</p>
             <p>
-              {confirmedBooking.serviceName} • {confirmedBooking.date} a las{" "}
+              {confirmedBooking.serviceName} • {formatDisplayDate(confirmedBooking.date)} a las{" "}
               {confirmedBooking.start_time.slice(0, 5)}
             </p>
             <p className="text-xs text-emerald-200/80">

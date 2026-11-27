@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Calendar,
@@ -26,6 +26,17 @@ function formatLocalDate(dateObj) {
   const m = String(dateObj.getMonth() + 1).padStart(2, "0");
   const d = String(dateObj.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function formatDisplayDate(isoDate) {
+  if (!isoDate) return "";
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+  const dt = new Date(y, m - 1, d);
+  const day = String(dt.getDate()).padStart(2, "0");
+  const month = String(dt.getMonth() + 1).padStart(2, "0");
+  const year = dt.getFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 function shiftDate(isoDate, deltaDays) {
@@ -59,6 +70,25 @@ export function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState(todayIso);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const dateInputRef = useRef(null);
+
+  function handleOpenDatePicker() {
+    const input = dateInputRef.current;
+    if (!input) return;
+
+    if (typeof input.showPicker === "function") {
+      try {
+        input.showPicker();
+        return;
+      } catch {
+        // Fallback si el navegador bloquea showPicker por gesto o contexto
+      }
+    }
+
+    input.focus();
+    input.click();
+  }
 
   // Estado del formulario manual
   const [manualStationId, setManualStationId] = useState("");
@@ -136,7 +166,7 @@ export function DashboardPage() {
         ? "mañana"
         : app.date === todayIso
         ? "hoy"
-        : `el ${app.date}`;
+        : `el ${formatDisplayDate(app.date)}`;
 
     const message = `Hola ${app.client_name}, te recordamos tu turno en *${tenant.business_name}* ${dayText} a las *${timeLabel} hs* (${serviceName} - ${stationName}). ¡Te esperamos!`;
 
@@ -302,13 +332,21 @@ export function DashboardPage() {
               <ChevronLeft className="h-4 w-4" />
             </button>
 
-            <div className="relative flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5">
-              <Calendar className="h-4 w-4 text-amber-400" />
+            <div
+              onClick={handleOpenDatePicker}
+              className="relative flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 hover:border-zinc-700 transition"
+            >
+              <Calendar className="h-4 w-4 text-amber-400 shrink-0" />
+              <span className="text-xs font-medium text-white tabular-nums">
+                {formatDisplayDate(selectedDate)}
+              </span>
               <input
+                ref={dateInputRef}
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent text-xs font-medium text-white focus:outline-none"
+                aria-label="Seleccionar fecha"
+                className="sr-only"
               />
             </div>
 
@@ -498,7 +536,7 @@ export function DashboardPage() {
           <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-white">
-                Agendar turno manual ({selectedDate})
+                Agendar turno manual ({formatDisplayDate(selectedDate)})
               </h2>
               <button
                 type="button"
